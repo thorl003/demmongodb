@@ -1,0 +1,292 @@
+================================================================================
+MONGODB - SOLVED SCENARIO BLUEPRINTS & PROBLEM CODES
+================================================================================
+
+--------------------------------------------------------------------------------
+SETUP: INSTANT SAMPLE DATASETS (PASTE INTO MONGOSH FIRST)
+--------------------------------------------------------------------------------
+use exam_db;
+
+db.emp.drop();
+db.emp.insertMany([
+  { _id: 101, name: "Arun", dept: "IT", salary: 75000, age: 28, skills: ["Python", "SQL", "Docker"] },
+  { _id: 102, name: "Bala", dept: "HR", salary: 45000, age: 32, skills: ["Excel", "Recruiting"] },
+  { _id: 103, name: "Chitra", dept: "IT", salary: 85000, age: 30, skills: ["Java", "Hadoop", "Spark"] },
+  { _id: 104, name: "Divya", dept: "Sales", salary: 35000, age: 25, skills: ["CRM", "Negotiation"] },
+  { _id: 105, name: "Ezhil", dept: "HR", salary: 55000, age: 29, skills: ["Payroll", "Excel"] },
+  { _id: 106, name: "Farooq", dept: "Sales", salary: 60000, age: 34, skills: ["CRM", "Analytics"] },
+  { _id: 107, name: "Gowri", dept: "IT", salary: 90000, age: 31, skills: ["Python", "Spark"] }
+]);
+
+db.dept_info.drop();
+db.dept_info.insertMany([
+  { dept_code: "IT", building: "Tech_Park_1", city: "Chennai" },
+  { dept_code: "HR", building: "Admin_Block_2", city: "Bengaluru" },
+  { dept_code: "Marketing", building: "Media_Hub_3", city: "Mumbai" }
+]);
+
+db.students.drop();
+db.students.insertMany([
+  { _id: 1, name: "Arun", dept: "CSE", m1: 85, m2: 90 },
+  { _id: 2, name: "Bala", dept: "ECE", m1: 45, m2: 55 },
+  { _id: 3, name: "Chitra", dept: "CSE", m1: 92, m2: 88 },
+  { _id: 4, name: "Divya", dept: "MECH", m1: 60, m2: 70 },
+  { _id: 5, name: "Farooq", dept: "CSE", m1: 35, m2: 40 }
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 1: EMPLOYEE & SALARY ANALYTICS + SIMULATING SQL 'HAVING'
+Goal    : Group by department, calculate headcount, total, avg, max, min salary;
+          filter departments where avg_sal > 50000 and headcount >= 2; sort DESC.
+Key Ops : $match, $group, $project, $round, $sort
+--------------------------------------------------------------------------------
+db.emp.aggregate([
+  { $group: {
+      _id: "$dept",
+      headcount: { $sum: 1 },
+      total_sal: { $sum: "$salary" },
+      avg_sal: { $avg: "$salary" },
+      max_sal: { $max: "$salary" },
+      min_sal: { $min: "$salary" }
+  }},
+  // Simulate SQL HAVING
+  { $match: { avg_sal: { $gt: 50000 }, headcount: { $gte: 2 } } },
+  { $project: {
+      _id: 0,
+      department: "$_id",
+      headcount: 1,
+      total_sal: 1,
+      avg_sal: { $round: ["$avg_sal", 2] },
+      max_sal: 1,
+      min_sal: 1
+  }},
+  { $sort: { avg_sal: -1 } }
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 2: ACADEMIC GRADING & MULTI-TIER CONDITIONAL LOGIC
+Goal    : Compute total, average, Pass/Fail (avg >= 50), and multi-tier grade
+          (Distinction >= 75, First Class >= 60, Pass >= 50, Fail < 50).
+Key Ops : $project, $add, $divide, $cond, $switch, $toUpper
+--------------------------------------------------------------------------------
+db.students.aggregate([
+  { $project: {
+      _id: 1,
+      name: { $toUpper: "$name" },
+      dept: 1,
+      total: { $add: ["$m1", "$m2"] },
+      avg: { $divide: [{ $add: ["$m1", "$m2"] }, 2] }
+  }},
+  { $project: {
+      _id: 1,
+      name: 1,
+      dept: 1,
+      total: 1,
+      avg: 1,
+      status: {
+        $cond: { if: { $gte: ["$avg", 50] }, then: "PASS", else: "FAIL" }
+      },
+      grade: {
+        $switch: {
+          branches: [
+            { case: { $gte: ["$avg", 75] }, then: "DISTINCTION" },
+            { case: { $gte: ["$avg", 60] }, then: "FIRST_CLASS" },
+            { case: { $gte: ["$avg", 50] }, then: "PASS_CLASS" }
+          ],
+          default: "FAIL"
+        }
+      }
+  }}
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 3: TOP-N RECORDS PER GROUP (HIGHEST PAID IN EACH DEPARTMENT)
+Goal    : Find the single highest-paid employee inside each department.
+Key Ops : $sort -> $group ($push: "$$ROOT") -> $project ($slice)
+--------------------------------------------------------------------------------
+db.emp.aggregate([
+  // 1. Sort all documents by salary descending first
+  { $sort: { salary: -1 } },
+
+  // 2. Group by dept and push ordered full documents into array
+  { $group: {
+      _id: "$dept",
+      top_employees: { $push: "$$ROOT" }
+  }},
+
+  // 3. Slice top 1 from each group's array (change 1 to N for Top-N)
+  { $project: {
+      _id: 0,
+      dept: "$_id",
+      top_earner: { $slice: ["$top_employees", 1] }
+  }},
+
+  // 4. Unwind array to flatten output
+  { $unwind: "$top_earner" }
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 4: WORD COUNT & SKILL FREQUENCY ANALYTICS
+Goal    : Split text lines or unwind skill arrays and count word frequencies.
+Key Ops : $split, $toLower, $unwind, $match, $group, $sort
+--------------------------------------------------------------------------------
+// Part A: Skill Frequency Count from emp array
+db.emp.aggregate([
+  { $unwind: "$skills" },
+  { $group: { _id: "$skills", count: { $sum: 1 } } },
+  { $sort: { count: -1 } }
+]);
+
+// Part B: Raw Sentence Word Count
+db.docs.drop();
+db.docs.insertMany([
+  { line: "MongoDB is a NoSQL document database" },
+  { line: "MongoDB stores data in BSON format" },
+  { line: "NoSQL databases scale horizontally" }
+]);
+
+db.docs.aggregate([
+  { $project: { words: { $split: [{ $toLower: "$line" }, " "] } } },
+  { $unwind: "$words" },
+  { $match: { words: { $ne: "" } } },
+  { $group: { _id: "$words", count: { $sum: 1 } } },
+  { $sort: { count: -1 } }
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 5: TWO-COLLECTION JOINS ($lookup - INNER & LEFT OUTER)
+Goal    : Join emp with dept_info on dept == dept_code.
+Key Ops : $lookup, $unwind, $ifNull
+--------------------------------------------------------------------------------
+// 5A. INNER JOIN (Only keeps employees whose dept matches dept_info)
+db.emp.aggregate([
+  { $lookup: {
+      from: "dept_info",
+      localField: "dept",
+      foreignField: "dept_code",
+      as: "dept_details"
+  }},
+  // Unwind without preserveNullAndEmptyArrays drops unmatched rows (Inner Join)
+  { $unwind: "$dept_details" },
+  { $project: {
+      _id: 0,
+      name: 1,
+      dept: 1,
+      building: "$dept_details.building",
+      city: "$dept_details.city"
+  }}
+]);
+
+// 5B. LEFT OUTER JOIN (Keeps all employees even if dept has no match, e.g. Sales)
+db.emp.aggregate([
+  { $lookup: {
+      from: "dept_info",
+      localField: "dept",
+      foreignField: "dept_code",
+      as: "dept_details"
+  }},
+  { $unwind: { path: "$dept_details", preserveNullAndEmptyArrays: true } },
+  { $project: {
+      _id: 0,
+      name: 1,
+      dept: 1,
+      building: { $ifNull: ["$dept_details.building", "Unassigned"] },
+      city: { $ifNull: ["$dept_details.city", "Unknown"] }
+  }}
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 6: WEATHER / SENSOR ANALYTICS
+Goal    : Filter out invalid sensor codes (temp == 9999 or quality != 1) and
+          compute max, min, avg temperature per year.
+Key Ops : $match, $group, $max, $min, $avg, $round
+--------------------------------------------------------------------------------
+db.weather.drop();
+db.weather.insertMany([
+  { year: 1950, temp: 22.5, quality: 1 },
+  { year: 1950, temp: 25.0, quality: 1 },
+  { year: 1950, temp: 9999.0, quality: 9 },
+  { year: 1951, temp: 19.2, quality: 0 },
+  { year: 1951, temp: 31.4, quality: 1 },
+  { year: 1952, temp: 33.1, quality: 1 }
+]);
+
+db.weather.aggregate([
+  { $match: { temp: { $ne: 9999.0 }, quality: 1 } },
+  { $group: {
+      _id: "$year",
+      max_temp: { $max: "$temp" },
+      min_temp: { $min: "$temp" },
+      avg_temp: { $avg: "$temp" },
+      readings: { $sum: 1 }
+  }},
+  { $project: {
+      _id: 0,
+      year: "$_id",
+      max_temp: 1,
+      min_temp: 1,
+      avg_temp: { $round: ["$avg_temp", 2] },
+      readings: 1
+  }},
+  { $sort: { max_temp: -1 } }
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 7: GLOBAL AGGREGATION (_id: null)
+Goal    : Compute overall company payroll, average salary, and employee count.
+Key Ops : $group with _id: null
+--------------------------------------------------------------------------------
+db.emp.aggregate([
+  { $group: {
+      _id: null,
+      total_employees: { $sum: 1 },
+      total_payroll: { $sum: "$salary" },
+      overall_avg: { $avg: "$salary" },
+      highest_salary: { $max: "$salary" },
+      lowest_salary: { $min: "$salary" }
+  }},
+  { $project: {
+      _id: 0,
+      total_employees: 1,
+      total_payroll: 1,
+      overall_avg: { $round: ["$overall_avg", 2] },
+      highest_salary: 1,
+      lowest_salary: 1
+  }}
+]);
+
+
+--------------------------------------------------------------------------------
+PROBLEM 8: COMPLEX CRUD & ARRAY UPDATES
+Goal    : Perform targeted updates, array modifications, and conditional deletes.
+Key Ops : updateMany, $inc, $addToSet, $pull, deleteMany
+--------------------------------------------------------------------------------
+// 1. Give 10% salary hike to IT employees earning less than 80000
+db.emp.updateMany(
+  { dept: "IT", salary: { $lt: 80000 } },
+  { $mul: { salary: 1.10 } }
+);
+
+// 2. Add "Kubernetes" skill to all IT employees without creating duplicates
+db.emp.updateMany(
+  { dept: "IT" },
+  { $addToSet: { skills: "Kubernetes" } }
+);
+
+// 3. Remove "Excel" from HR employees' skills array
+db.emp.updateMany(
+  { dept: "HR" },
+  { $pull: { skills: "Excel" } }
+);
+
+// 4. Delete employees in Sales earning below 40000
+db.emp.deleteMany(
+  { dept: "Sales", salary: { $lt: 40000 } }
+);

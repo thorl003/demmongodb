@@ -1,0 +1,209 @@
+================================================================================
+MONGODB - MASTER SYNTAX TEMPLATES CHEATSHEET
+================================================================================
+
+--------------------------------------------------------------------------------
+1. CLI, SHELL & DATABASE COMMANDS
+--------------------------------------------------------------------------------
+// Enter MongoDB shell in Docker
+docker exec -it <container_name> mongosh
+
+// Import / Export via Linux bash shell (NOT inside mongosh)
+mongoimport --db exam_db --collection emp --type csv --headerline --file emp.csv
+mongoimport --db exam_db --collection emp --file emp.json --jsonArray
+mongoexport --db exam_db --collection emp --out emp_out.json --jsonArray
+
+// Database & Collection commands (inside mongosh)
+show dbs
+use exam_db
+db
+show collections
+db.createCollection("emp")
+db.emp.drop()
+db.dropDatabase()
+exit
+
+
+--------------------------------------------------------------------------------
+2. CREATE / INSERT DOCUMENTS
+--------------------------------------------------------------------------------
+// Insert single document
+db.emp.insertOne({ _id: 101, name: "Arun", dept: "IT", salary: 75000, skills: ["Python", "SQL"] });
+
+// Insert multiple documents
+db.emp.insertMany([
+  { _id: 102, name: "Bala", dept: "HR", salary: 45000, skills: ["Excel"] },
+  { _id: 103, name: "Chitra", dept: "IT", salary: 85000, skills: ["Java", "Spark"] }
+]);
+
+
+--------------------------------------------------------------------------------
+3. READ / FIND, PROJECTION, SORT & LIMIT
+--------------------------------------------------------------------------------
+// Find all documents
+db.emp.find();
+
+// Find single matching document
+db.emp.findOne({ dept: "IT" });
+
+// Filter with multiple conditions (Implicit AND)
+db.emp.find({ dept: "IT", salary: { $gte: 70000 } });
+
+// Projection (1 = include, 0 = exclude; _id is included unless set to 0)
+db.emp.find({ dept: "IT" }, { name: 1, salary: 1, _id: 0 });
+
+// Sort (1 = Ascending, -1 = Descending), Skip, Limit
+db.emp.find().sort({ salary: -1 });
+db.emp.find().sort({ dept: 1, salary: -1 }).limit(5);
+db.emp.find().sort({ salary: -1 }).skip(1).limit(1);   // 2nd highest
+
+// Count & Distinct
+db.emp.countDocuments({ dept: "IT" });
+db.emp.distinct("dept");
+
+
+--------------------------------------------------------------------------------
+4. COMPARISON, LOGICAL, ELEMENT & REGEX OPERATORS
+--------------------------------------------------------------------------------
+// Comparison
+db.emp.find({ salary: { $eq: 75000 } });               // Equal
+db.emp.find({ dept: { $ne: "HR" } });                  // Not Equal
+db.emp.find({ salary: { $gt: 50000 } });               // Greater Than
+db.emp.find({ salary: { $gte: 50000 } });              // Greater Than or Equal
+db.emp.find({ salary: { $lt: 60000 } });               // Less Than
+db.emp.find({ salary: { $lte: 60000 } });              // Less Than or Equal
+db.emp.find({ dept: { $in: ["IT", "Sales"] } });       // In array
+db.emp.find({ dept: { $nin: ["HR", "Admin"] } });      // Not in array
+
+// Logical
+db.emp.find({ $and: [{ dept: "IT" }, { salary: { $gt: 70000 } }] });
+db.emp.find({ $or: [{ dept: "IT" }, { salary: { $gt: 80000 } }] });
+db.emp.find({ $nor: [{ dept: "HR" }, { salary: { $lt: 40000 } }] });
+db.emp.find({ salary: { $not: { $gt: 60000 } } });
+
+// Element
+db.emp.find({ bonus: { $exists: true } });
+db.emp.find({ salary: { $type: "number" } });
+
+// Pattern / Regex ("i" = case-insensitive)
+db.emp.find({ name: { $regex: "^A" } });               // Starts with A
+db.emp.find({ name: { $regex: "ra$", $options: "i" } }); // Ends with ra
+
+
+--------------------------------------------------------------------------------
+5. ARRAY QUERY & UPDATE OPERATORS
+--------------------------------------------------------------------------------
+// Query Arrays
+db.emp.find({ skills: "Python" });                     // Contains "Python"
+db.emp.find({ skills: { $all: ["Python", "SQL"] } });  // Contains all listed elements
+db.emp.find({ skills: { $size: 2 } });                 // Exact array length 2
+db.emp.find({ "skills.0": "Python" });                 // Element at index 0 is "Python"
+
+// Update Arrays
+db.emp.updateOne({ name: "Arun" }, { $push: { skills: "Docker" } });              // Append
+db.emp.updateOne({ name: "Arun" }, { $push: { skills: { $each: ["Git", "AWS"] } } }); // Append multiple
+db.emp.updateOne({ name: "Arun" }, { $addToSet: { skills: "Python" } });          // Add if unique
+db.emp.updateOne({ name: "Arun" }, { $pull: { skills: "SQL" } });                 // Remove matching value
+db.emp.updateOne({ name: "Arun" }, { $pullAll: { skills: ["Git", "AWS"] } });     // Remove multiple values
+db.emp.updateOne({ name: "Arun" }, { $pop: { skills: 1 } });                      // Remove last (1) or first (-1)
+
+
+--------------------------------------------------------------------------------
+6. UPDATE DOCUMENTS (updateOne & updateMany)
+--------------------------------------------------------------------------------
+// Set / Add field
+db.emp.updateOne({ name: "Arun" }, { $set: { salary: 80000, city: "Chennai" } });
+
+// Increment / Decrement
+db.emp.updateMany({ dept: "IT" }, { $inc: { salary: 5000 } });
+db.emp.updateMany({ dept: "HR" }, { $inc: { salary: -2000 } });
+
+// Multiply
+db.emp.updateMany({ dept: "Sales" }, { $mul: { salary: 1.10 } });
+
+// Remove field ($unset) & Rename field ($rename)
+db.emp.updateOne({ name: "Arun" }, { $unset: { city: "" } });
+db.emp.updateMany({}, { $rename: { "dept": "department" } });
+
+// Upsert (Update if exists, Insert if not found)
+db.emp.updateOne(
+  { _id: 109 },
+  { $set: { name: "Kiran", dept: "IT", salary: 72000 } },
+  { upsert: true }
+);
+
+
+--------------------------------------------------------------------------------
+7. DELETE DOCUMENTS
+--------------------------------------------------------------------------------
+db.emp.deleteOne({ _id: 109 });
+db.emp.deleteMany({ salary: { $lt: 40000 } });
+db.emp.deleteMany({});                                 // Delete all documents in collection
+
+
+--------------------------------------------------------------------------------
+8. AGGREGATION PIPELINE STAGES & EXPRESSIONS
+--------------------------------------------------------------------------------
+db.emp.aggregate([
+  // 1. Filter documents (SQL: WHERE)
+  { $match: { salary: { $gte: 40000 } } },
+
+  // 2. Group & Accumulate (SQL: GROUP BY)
+  { $group: {
+      _id: "$dept",                                    // Use null for global group
+      count: { $sum: 1 },
+      total_sal: { $sum: "$salary" },
+      avg_sal: { $avg: "$salary" },
+      min_sal: { $min: "$salary" },
+      max_sal: { $max: "$salary" },
+      names_list: { $push: "$name" },
+      unique_names: { $addToSet: "$name" }
+  }},
+
+  // 3. Post-group filter (SQL: HAVING)
+  { $match: { avg_sal: { $gt: 50000 } } },
+
+  // 4. Reshape / Compute fields (SQL: SELECT)
+  { $project: {
+      _id: 0,
+      department: "$_id",
+      count: 1,
+      rounded_avg: { $round: ["$avg_sal", 2] },
+      bonus: { $multiply: ["$max_sal", 0.10] },
+      upper_dept: { $toUpper: "$_id" },
+      status: { $cond: { if: { $gte: ["$avg_sal", 70000] }, then: "HIGH", else: "NORMAL" } }
+  }},
+
+  // 5. Sort & Limit
+  { $sort: { rounded_avg: -1 } },
+  { $limit: 5 }
+]);
+
+// Unwind array into separate documents (SQL/Pig: EXPLODE / FLATTEN)
+db.emp.aggregate([
+  { $unwind: "$skills" },
+  { $group: { _id: "$skills", total: { $sum: 1 } } }
+]);
+
+// Left Outer Join two collections ($lookup)
+db.emp.aggregate([
+  { $lookup: {
+      from: "dept_info",
+      localField: "dept",
+      foreignField: "dept_code",
+      as: "dept_docs"
+  }},
+  { $unwind: { path: "$dept_docs", preserveNullAndEmptyArrays: true } }
+]);
+
+
+--------------------------------------------------------------------------------
+9. INDEXING & EXPLAIN
+--------------------------------------------------------------------------------
+db.emp.createIndex({ dept: 1 });                       // Single field ascending
+db.emp.createIndex({ dept: 1, salary: -1 });           // Compound index
+db.emp.createIndex({ name: 1 }, { unique: true });     // Unique index
+db.emp.createIndex({ bio: "text" });                   // Text search index
+db.emp.getIndexes();
+db.emp.dropIndex("dept_1");
+db.emp.find({ dept: "IT" }).explain("executionStats");
